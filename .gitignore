@@ -1,0 +1,7 @@
+# model checkpoints are uploaded to HF / Drive, never committed
+checkpoints/
+data_cache/
+
+__pycache__/
+*.pyc
+.venv/

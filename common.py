@@ -1,0 +1,125 @@
+"""Task 1.3 - shared helpers used by every stage.
+
+Run `python common.py` to produce Table 1 (results/table1_data.md) and the
+SFT-mask correctness check.
+"""
+import os
+import pickle
+import sys
+
+import torch
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "starter"))
+from batching import collate_prompts  # noqa: E402
+from data import load_sft_splits, load_preference_splits, load_eval_posts  # noqa: E402
+
+
+def load_data(tok, cache="data_cache/data.pkl"):
+    """Return (sft_train, sft_val, pref_train, pref_val, eval_posts).
+    Tokenising takes minutes, so the result is pickled on the first call."""
+    if os.path.exists(cache):
+        with open(cache, "rb") as f:
+            return pickle.load(f)
+    sft_train, sft_val = load_sft_splits(tok)
+    pref_train, pref_val = load_preference_splits(tok)
+    eval_posts = load_eval_posts(tok)
+    data = (sft_train, sft_val, pref_train, pref_val, eval_posts)
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    with open(cache, "wb") as f:
+        pickle.dump(data, f)
+    return data
+
+
+@torch.no_grad()
+def generate_ids(model, tok, examples, max_new_tokens=48, batch_size=16, **gen_kwargs):
+    """Generate a continuation of each example's prompt_ids (left-padded batches).
+    Returns one token-id list per example, cut after its first EOS (EOS kept).
+    Greedy by default; pass do_sample=True, temperature=..., etc. for sampling."""
+    gen_kwargs.setdefault("do_sample", False)
+    was_training = model.training
+    model.eval()
+    out = []
+    for i in range(0, len(examples), batch_size):
+        b = collate_prompts(examples[i:i + batch_size], tok.pad_token_id)
+        ids, attn = b["input_ids"].to(model.device), b["attention_mask"].to(model.device)
+        gen = model.generate(input_ids=ids, attention_mask=attn, max_new_tokens=max_new_tokens,
+                             pad_token_id=tok.pad_token_id, **gen_kwargs)
+        for row in gen[:, ids.shape[1]:].tolist():
+            if tok.eos_token_id in row:
+                row = row[:row.index(tok.eos_token_id) + 1]
+            out.append(row)
+    model.train(was_training)
+    return out
+
+
+def decode_summary(tok, ids):
+    """Summary text without the trailing EOS."""
+    if ids and ids[-1] == tok.eos_token_id:
+        ids = ids[:-1]
+    return tok.decode(ids)
+
+
+def generate_summaries(model, tok, examples, max_new_tokens=48, batch_size=16, **gen_kwargs):
+    """Like generate_ids, but returns decoded summary strings."""
+    return [decode_summary(tok, ids)
+            for ids in generate_ids(model, tok, examples, max_new_tokens, batch_size, **gen_kwargs)]
+
+
+def token_logprobs(model, input_ids, attention_mask, prompt_lens):
+    """Return log pi(x_t | x_<t) for every position t >= 1, shape (B, L-1),
+    and a mask of the same shape that is 1 exactly on summary tokens
+    (not prompt, not padding).
+
+    Position t of the outputs refers to token input_ids[:, t+1], which is
+    predicted by the logits at input position t."""
+    logits = model(input_ids=input_ids, attention_mask=attention_mask).logits[:, :-1].float()
+    targets = input_ids[:, 1:]
+    logprobs = logits.gather(-1, targets.unsqueeze(-1)).squeeze(-1) - torch.logsumexp(logits, dim=-1)
+
+    pos = torch.arange(1, input_ids.size(1), device=input_ids.device)  # index of the target token
+    is_summary = pos[None, :] >= prompt_lens.to(input_ids.device)[:, None]
+    summary_mask = (is_summary & (attention_mask[:, 1:] == 1)).long()  # pad == eos, so use the mask
+    return logprobs, summary_mask
+
+
+if __name__ == "__main__":
+    from models import load_tokenizer, load_causal_lm
+    from batching import collate_sft
+
+    tok = load_tokenizer()
+    sft_train, sft_val, pref_train, pref_val, eval_posts = load_data(tok)
+
+    # ---- Task 1.2: Table 1 ----
+    p_lens = [len(ex["prompt_ids"]) for ex in sft_train]
+    s_lens = [len(ex["summary_ids"]) for ex in sft_train]
+    table = "\n".join([
+        "| | |", "|---|---|",
+        f"| SFT train / validation pairs | {len(sft_train)} / {len(sft_val)} |",
+        f"| Preference train / validation pairs | {len(pref_train)} / {len(pref_val)} |",
+        f"| Evaluation posts | {len(eval_posts)} |",
+        f"| Mean / max prompt length, SFT train (tokens) | {sum(p_lens) / len(p_lens):.1f} / {max(p_lens)} |",
+        f"| Mean / max summary length, SFT train (tokens) | {sum(s_lens) / len(s_lens):.1f} / {max(s_lens)} |",
+    ])
+    os.makedirs("results", exist_ok=True)
+    with open("results/table1_data.md", "w", encoding="utf-8") as f:
+        f.write("# Table 1 - Data\n\n" + table + "\n")
+    print(table)
+
+    # ---- Task 1.3: SFT mask check ----
+    model = load_causal_lm()
+    model.eval()
+    batch = sft_train[:8]
+    b = collate_sft(batch, tok.pad_token_id)
+    b = {k: v.to(model.device) for k, v in b.items()}
+    with torch.no_grad():
+        logprobs, mask = token_logprobs(model, b["input_ids"], b["attention_mask"], b["prompt_lens"])
+    print("\nlogprobs", tuple(logprobs.shape), "mask", tuple(mask.shape))
+
+    targets = b["input_ids"][:, 1:]
+    all_ok = True
+    for i, ex in enumerate(batch):
+        decoded = tok.decode(targets[i][mask[i].bool()])
+        ok = decoded == ex["summary"] + tok.eos_token and mask[i].sum().item() == len(ex["summary_ids"])
+        all_ok &= ok
+        print(f"[{i}] {'OK ' if ok else 'BAD'} n_masked={mask[i].sum().item()} {decoded!r}")
+    print("\nSFT mask check:", "PASSED" if all_ok else "FAILED")
