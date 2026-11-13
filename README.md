@@ -40,7 +40,7 @@ pip install -r requirements.txt
 cd starter && python check_starter.py && cd ..
 ```
 
-On Colab / Kaggle, open the matching notebook in `notebooks/` instead; it clones the repo and
+On Colab / Kaggle, open `notebooks/colab_runner.ipynb` instead; it clones the repo and
 stores `checkpoints/`, `data_cache/` and `results/` on Google Drive.
 
 ## How to run

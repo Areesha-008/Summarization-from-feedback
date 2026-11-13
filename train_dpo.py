@@ -6,6 +6,7 @@ Log loss + implicit reward accuracy every 250 steps. Save to checkpoints/dpo/.
 
 Outputs: checkpoints/dpo/, results/logs/dpo_log.csv, results/figures/fig4_dpo.png.
 Correctness checks printed at start: reference frozen, first-step loss = log 2.
+Progress is saved to checkpoints/dpo_resume/ every 250 steps; rerunning resumes from there.
 """
 import csv
 import math
@@ -20,7 +21,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from common import CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, load_data, token_logprobs
+from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, find_resume, load_data,
+                    load_resume_state, save_resume, token_logprobs)
 from batching import collate_pref
 from config import SEED
 from models import load_causal_lm, load_tokenizer
@@ -31,6 +33,7 @@ BATCH = 8
 LOG_EVERY = 250
 SFT_CKPT = os.path.join(CHECKPOINTS_DIR, "sft")
 OUT = os.path.join(CHECKPOINTS_DIR, "dpo")
+RESUME = os.path.join(CHECKPOINTS_DIR, "dpo_resume")
 
 
 def sequence_logprob(model, input_ids, attention_mask, prompt_lens):
@@ -90,7 +93,8 @@ def main():
     torch.manual_seed(SEED)
     tok = load_tokenizer()
     _, _, pref_train, pref_val, _ = load_data(tok)
-    policy = load_causal_lm(SFT_CKPT)
+    resume_from = find_resume(RESUME)
+    policy = load_causal_lm(resume_from or SFT_CKPT)
     ref = load_causal_lm(SFT_CKPT)
     ref.eval()
     for param in ref.parameters():
@@ -98,18 +102,28 @@ def main():
     print("reference frozen:", all(not param.requires_grad for param in ref.parameters()))
 
     collate = partial(collate_pref, pad_id=tok.pad_token_id)
-    train_loader = DataLoader(pref_train, BATCH, shuffle=True, collate_fn=collate)
+    order = torch.Generator()
+    order.manual_seed(SEED)  # same shuffle on every run, so a resumed run skips the right batches
+    train_loader = DataLoader(pref_train, BATCH, shuffle=True, collate_fn=collate, generator=order)
     val_loader = DataLoader(pref_val, BATCH, shuffle=False, collate_fn=collate)
     opt = torch.optim.AdamW(policy.parameters(), lr=LR)
 
-    log = [(0, None, implicit_accuracy(policy, ref, val_loader))]
-    print(f"step 0  val acc {log[0][2]:.4f}", flush=True)
+    if resume_from:
+        state = load_resume_state(resume_from, opt)
+        start_step, log, elapsed_done = state["step"], state["log"], state["elapsed_min"]
+        print(f"resuming from step {start_step}", flush=True)
+    else:
+        start_step, elapsed_done = 0, 0.0
+        log = [(0, None, implicit_accuracy(policy, ref, val_loader))]
+        print(f"step 0  val acc {log[0][2]:.4f}", flush=True)
     running = []
     t0 = time.time()
     policy.train()
     n_steps = len(train_loader)
 
     for step, batch in enumerate(train_loader, start=1):
+        if step <= start_step:
+            continue
         margin = pair_margin(policy, ref, batch)
         loss = dpo_loss(margin)
         if step == 1:
@@ -124,14 +138,16 @@ def main():
             val_acc = implicit_accuracy(policy, ref, val_loader)
             log.append((step, train_loss, val_acc))
             running = []
+            elapsed = elapsed_done + (time.time() - t0) / 60
             print(
                 f"step {step}/{n_steps}  train {train_loss:.4f}  val acc {val_acc:.4f}  "
-                f"{(time.time() - t0) / 60:.1f} min",
+                f"{elapsed:.1f} min",
                 flush=True,
             )
-            write_log(log)  # keep the partial log if the runtime disconnects
+            save_resume(RESUME, policy, tok, opt, {"step": step, "log": log, "elapsed_min": elapsed})
+            write_log(log)
 
-    train_minutes = (time.time() - t0) / 60
+    train_minutes = elapsed_done + (time.time() - t0) / 60
     os.makedirs(OUT, exist_ok=True)
     policy.save_pretrained(OUT)
     tok.save_pretrained(OUT)

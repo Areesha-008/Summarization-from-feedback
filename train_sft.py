@@ -5,7 +5,6 @@ Log train/val loss every 250 steps. Save to checkpoints/sft/.
 """
 import csv
 import os
-import shutil
 import time
 from functools import partial
 
@@ -13,8 +12,9 @@ import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 
-from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, RESULTS_DIR,
-                    generate_summaries, load_data, token_logprobs)
+from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, RESULTS_DIR, find_resume,
+                    generate_summaries, load_data, load_resume_state, save_resume,
+                    token_logprobs)
 from batching import collate_sft  # path already set by common
 from config import SEED
 from models import load_causal_lm, load_tokenizer
@@ -65,47 +65,6 @@ def write_log(log, path=os.path.join(LOGS_DIR, "sft_log.csv")):
         writer.writerows(log)
 
 
-def find_resume():
-    """Resume dir with the highest finished step. A mid-save disconnect keeps the previous one."""
-    best, best_step = None, -1
-    for path in (RESUME, RESUME + "_tmp", RESUME + "_bak"):
-        pt = os.path.join(path, "trainer.pt")
-        if not os.path.isfile(pt):
-            continue
-        step = torch.load(pt, map_location="cpu", weights_only=False)["step"]
-        if step > best_step:
-            best, best_step = path, step
-    return best
-
-
-def save_resume(model, tok, opt, step, log, before, elapsed_min):
-    tmp = RESUME + "_tmp"
-    if os.path.isdir(tmp):
-        shutil.rmtree(tmp)
-    os.makedirs(tmp, exist_ok=True)
-    model.save_pretrained(tmp)
-    tok.save_pretrained(tmp)
-    torch.save(
-        {
-            "step": step,
-            "optimizer": opt.state_dict(),
-            "log": log,
-            "before": before,
-            "elapsed_min": elapsed_min,
-        },
-        os.path.join(tmp, "trainer.pt"),
-    )
-    bak = RESUME + "_bak"
-    if os.path.isdir(bak):
-        shutil.rmtree(bak)
-    if os.path.isdir(RESUME):
-        shutil.move(RESUME, bak)
-    shutil.move(tmp, RESUME)
-    if os.path.isdir(bak):
-        shutil.rmtree(bak)
-    print(f"saved resume at step {step}", flush=True)
-
-
 def write_samples(path, posts, before, after):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -124,24 +83,8 @@ def main():
     sft_train, sft_val, _, _, eval_posts = load_data(tok)
     sample_posts = eval_posts[:5]
 
-    resume_from = find_resume()
-    start_step = 0
-    log = []
-    before = None
-    elapsed_done = 0.0
-    opt_state = None
-    if resume_from:
-        model = load_causal_lm(resume_from)
-        ckpt = torch.load(os.path.join(resume_from, "trainer.pt"), map_location="cpu", weights_only=False)
-        start_step = ckpt["step"]
-        log = ckpt["log"]
-        before = ckpt["before"]
-        elapsed_done = ckpt["elapsed_min"]
-        opt_state = ckpt["optimizer"]
-        print(f"resuming from step {start_step}", flush=True)
-    else:
-        model = load_causal_lm()
-        before = generate_summaries(model, tok, sample_posts, MAX_NEW)
+    resume_from = find_resume(RESUME)
+    model = load_causal_lm(resume_from) if resume_from else load_causal_lm()
 
     collate = partial(collate_sft, pad_id=tok.pad_token_id)
     order = torch.Generator()
@@ -151,12 +94,14 @@ def main():
     n_steps = len(train_loader)
 
     opt = torch.optim.AdamW(model.parameters(), lr=LR)
-    if opt_state is not None:
-        opt.load_state_dict(opt_state)
-        for state in opt.state.values():
-            for key, value in state.items():
-                if torch.is_tensor(value):
-                    state[key] = value.to(model.device)
+    if resume_from:
+        state = load_resume_state(resume_from, opt)
+        start_step, log = state["step"], state["log"]
+        before, elapsed_done = state["before"], state["elapsed_min"]
+        print(f"resuming from step {start_step}", flush=True)
+    else:
+        start_step, log, elapsed_done = 0, [], 0.0
+        before = generate_summaries(model, tok, sample_posts, MAX_NEW)
     running = []
 
     if start_step == 0:
@@ -183,7 +128,8 @@ def main():
             running = []
             elapsed = elapsed_done + (time.time() - t0) / 60
             print(f"step {step}  train {train_mean:.4f}  val {val:.4f}  {elapsed:.2f} min", flush=True)
-            save_resume(model, tok, opt, step, log, before, elapsed)
+            save_resume(RESUME, model, tok, opt,
+                        {"step": step, "log": log, "before": before, "elapsed_min": elapsed})
             write_log(log)
 
     train_minutes = elapsed_done + (time.time() - t0) / 60
