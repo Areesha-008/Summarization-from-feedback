@@ -26,7 +26,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, find_resume, load_data, load_lm,
-                    load_resume_state, save_resume)
+                    load_resume_state, save_resume, write_stage_summary)
 from batching import collate_pref
 from config import SEED
 from models import load_tokenizer
@@ -215,6 +215,8 @@ def main():
     print(f"final train {log[-1][1]:.4f}  val pairwise acc {val_acc:.4f}", flush=True)
     print(f"train minutes {train_minutes:.2f}  device {gpu_name}", flush=True)
     print(f"saved {OUT}", flush=True)
+    write_stage_summary("reward", {"final_train_loss": log[-1][1], "val_pairwise_acc": val_acc,
+                                   "minutes": train_minutes})
 
 
 if __name__ == "__main__":

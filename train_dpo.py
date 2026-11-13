@@ -22,7 +22,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, find_resume, load_data,
-                    load_lm, load_resume_state, save_resume, token_logprobs)
+                    load_lm, load_resume_state, save_resume, token_logprobs,
+                    write_stage_summary)
 from batching import collate_pref
 from config import SEED
 from models import load_tokenizer
@@ -112,9 +113,10 @@ def main():
     if resume_from:
         state = load_resume_state(resume_from, opt)
         start_step, log, elapsed_done = state["step"], state["log"], state["elapsed_min"]
+        first_loss = state.get("first_step_loss")
         print(f"resuming from step {start_step}", flush=True)
     else:
-        start_step, elapsed_done = 0, 0.0
+        start_step, elapsed_done, first_loss = 0, 0.0, None
         log = [(0, None, implicit_accuracy(policy, ref, val_loader))]
         print(f"step 0  val acc {log[0][2]:.4f}", flush=True)
     running = []
@@ -128,7 +130,8 @@ def main():
         margin = pair_margin(policy, ref, batch)
         loss = dpo_loss(margin)
         if step == 1:
-            print(f"first-step loss {loss.item():.4f}  expect {math.log(2):.4f}", flush=True)
+            first_loss = loss.item()
+            print(f"first-step loss {first_loss:.4f}  expect {math.log(2):.4f}", flush=True)
         loss.backward()
         opt.step()
         opt.zero_grad()
@@ -145,7 +148,8 @@ def main():
                 f"{elapsed:.1f} min",
                 flush=True,
             )
-            save_resume(RESUME, policy, tok, opt, {"step": step, "log": log, "elapsed_min": elapsed})
+            save_resume(RESUME, policy, tok, opt, {"step": step, "log": log, "elapsed_min": elapsed,
+                                                   "first_step_loss": first_loss})
             write_log(log)
 
     train_minutes = elapsed_done + (time.time() - t0) / 60
@@ -173,6 +177,10 @@ def main():
     gpu_name = torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU"
     print(f"final train {log[-1][1]:.4f}  val acc {log[-1][2]:.4f}", flush=True)
     print(f"train minutes {train_minutes:.2f}  device {gpu_name}", flush=True)
+    write_stage_summary("dpo", {
+        "final_train_loss": log[-1][1], "val_implicit_acc": log[-1][2], "minutes": train_minutes,
+        "check_reference_frozen": all(not p.requires_grad for p in ref.parameters()),
+        "check_first_step_loss": first_loss, "expected_first_step_loss": math.log(2)})
     print(f"saved {OUT}", flush=True)
 
 

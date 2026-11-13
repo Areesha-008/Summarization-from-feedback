@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, RESULTS_DIR, find_resume,
                     generate_summaries, load_data, load_lm, load_resume_state, save_resume,
-                    token_logprobs)
+                    token_logprobs, write_stage_summary)
 from batching import collate_sft  # path already set by common
 from config import SEED
 from models import load_tokenizer
@@ -167,6 +167,8 @@ def main():
     print(f"Final Val Loss:   {val_losses[-1]:.4f}")
     print(f"Train Minutes:    {train_minutes:.2f}")
     print(f"Device:           {gpu_name}")
+    write_stage_summary("sft", {"final_train_loss": train_losses[-1], "val_loss": val_losses[-1],
+                                "minutes": train_minutes})
 
 
 if __name__ == "__main__":

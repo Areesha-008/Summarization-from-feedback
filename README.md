@@ -40,26 +40,28 @@ pip install -r requirements.txt
 cd starter && python check_starter.py && cd ..
 ```
 
-On Colab / Kaggle, open `notebooks/colab_runner.ipynb` instead; it clones the repo and
-stores `checkpoints/`, `data_cache/` and `results/` on Google Drive.
+On Colab, open `notebooks/colab_runner.ipynb` and use *Runtime → Run all*: it runs every stage below in
+order, resumes after a disconnect, and stores `checkpoints/`, `data_cache/` and `results/` on Google Drive.
 
 ## How to run
 
 | Step | Command | Produces |
 |------|---------|----------|
-| Task 1 - data table + mask check | `python common.py` | `results/table1_data.md` |
+| Task 1 - data table + mask check | `python common.py` | `results/table1_data.md`, `results/logs/data_summary.json` |
 | Task 2 - SFT | `python train_sft.py` | `checkpoints/sft/`, `results/logs/sft_log.csv`, `results/figures/fig1_sft_loss.png`, `results/sft_samples.md` |
 | Task 3 - reward model | `python train_reward.py` | `checkpoints/reward/reward_model.pt`, `results/logs/reward_log.csv`, `results/logs/reward_val_scores.jsonl`, `results/figures/fig2_reward.png` |
 | Task 4 - PPO | `python train_ppo.py` | `checkpoints/ppo/`, `results/logs/ppo_log.csv`, `results/figures/fig3_ppo.png` |
 | Task 5 - DPO | `python train_dpo.py` | `checkpoints/dpo/`, `results/logs/dpo_log.csv`, `results/figures/fig4_dpo.png` |
-| Task 6 - evaluation | `python evaluate.py` | TODO |
+| Task 6 - evaluation | `python evaluate.py` | `results/eval_summaries.jsonl`, `results/table3_final.md`, `results/table2_training.md`, `results/correctness_checks.md`, `results/human_eval.csv`, skeletons of `results/samples.md` and `results/analysis.md` |
+| Section 3.2 - human evaluation | fill `results/human_eval.csv`, then `python evaluate.py --tally-human` | `results/table4_human_eval.md` |
 | Task 8 - front end | TODO | |
 
 Stages must run in order: reward, PPO and DPO all start from `checkpoints/sft/`, and PPO also needs
 `checkpoints/reward/`.
 Every stage loads models through `common.load_lm`, which casts to float32 (SmolLM2 is stored in
 bfloat16, and `transformers` >= 5 would otherwise train in bfloat16, where small AdamW updates are lost).
-Each script prints `model dtype torch.float32` at start-up.
+Each script prints `model dtype torch.float32` at start-up, and writes its final numbers and correctness
+checks to `results/logs/<stage>_summary.json`, which `evaluate.py` turns into Table 2 and the checks below.
 
 ## Checkpoints
 
@@ -67,7 +69,7 @@ TODO (Hugging Face / Google Drive links)
 
 ## Correctness checks
 
-TODO
+TODO: paste `results/correctness_checks.md` here after `python evaluate.py`.
 
 ## Front end
 

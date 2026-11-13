@@ -149,6 +149,15 @@ def generate_summaries(model, tok, examples, max_new_tokens=48, batch_size=16, *
             for ids in generate_ids(model, tok, examples, max_new_tokens, batch_size, **gen_kwargs)]
 
 
+def write_stage_summary(stage, fields):
+    """results/logs/<stage>_summary.json: final numbers + correctness checks of one stage.
+    evaluate.py turns these into Table 2 and results/correctness_checks.md."""
+    fields = dict(fields, gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU")
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    with open(os.path.join(LOGS_DIR, f"{stage}_summary.json"), "w", encoding="utf-8") as f:
+        json.dump(fields, f, indent=2)
+
+
 def token_logprobs(model, input_ids, attention_mask, prompt_lens):
     """Return log pi(x_t | x_<t) for every position t >= 1, shape (B, L-1),
     and a mask of the same shape that is 1 exactly on summary tokens
@@ -207,3 +216,5 @@ if __name__ == "__main__":
         all_ok &= ok
         print(f"[{i}] {'OK ' if ok else 'BAD'} n_masked={mask[i].sum().item()} {decoded!r}")
     print("\nSFT mask check:", "PASSED" if all_ok else "FAILED")
+    write_stage_summary("data", {"sft_mask_check_passed": bool(all_ok),
+                                 "mask_check_examples": [tok.decode(targets[i][mask[i].bool()]) for i in range(2)]})

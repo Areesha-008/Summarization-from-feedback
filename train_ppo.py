@@ -28,7 +28,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, decode_summary, find_resume,
-                    generate_ids, load_data, load_lm, load_resume_state, save_resume)
+                    generate_ids, load_data, load_lm, load_resume_state, save_resume,
+                    write_stage_summary)
 from config import SEED
 from models import load_tokenizer
 from train_reward import load_reward_model
@@ -313,6 +314,17 @@ def main():
     print(f"final mean r_phi {log[-1]['mean_reward']:.4f}  (mean of last 10: "
           f"{sum(r['mean_reward'] for r in log[-10:]) / len(log[-10:]):.4f})", flush=True)
     print(f"train minutes {train_minutes:.2f}  device {gpu_name}", flush=True)
+    last = log[-1]
+    write_stage_summary("ppo", {
+        "final_train_loss": last["policy_loss"] + C_V * last["value_loss"] - C_H * last["entropy"],
+        "final_mean_reward": last["mean_reward"],
+        "last10_mean_reward": sum(r["mean_reward"] for r in log[-10:]) / len(log[-10:]),
+        "minutes": train_minutes,
+        "check_reference_frozen": all(not p.requires_grad for p in ref.parameters()),
+        "check_reward_model_frozen": all(not p.requires_grad for p in reward_model.parameters()),
+        "check_iteration1_kl": log[0]["mean_kl"],
+        "check_max_first_epoch_ratio_dev": worst,
+        "check_max_first_epoch_clip_frac": max(r["first_epoch_clip_frac"] for r in log)})
     print(f"saved {OUT}", flush=True)
 
 
