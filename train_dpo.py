@@ -4,9 +4,11 @@ Trainable policy + frozen reference, both from SFT. Sequence logprob = sum over 
 tokens. DPO loss with beta=0.1. 1 epoch, AdamW lr 2e-6, batch 8 pairs.
 Log loss + implicit reward accuracy every 250 steps. Save to checkpoints/dpo/.
 
-The functions and the loop body below are still pseudocode. Replace each TODO
-with real Python. Leave the rest as it is.
+Outputs: checkpoints/dpo/, results/logs/dpo_log.csv, results/figures/fig4_dpo.png.
+Correctness checks printed at start: reference frozen, first-step loss = log 2.
+Progress is saved to checkpoints/dpo_resume/ every 250 steps; rerunning resumes from there.
 """
+import csv
 import math
 import os
 import time
@@ -19,7 +21,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from common import load_data, token_logprobs
+from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, find_resume, load_data,
+                    load_resume_state, save_resume, token_logprobs)
 from batching import collate_pref
 from config import SEED
 from models import load_causal_lm, load_tokenizer
@@ -28,8 +31,9 @@ BETA = 0.1
 LR = 2e-6
 BATCH = 8
 LOG_EVERY = 250
-SFT_CKPT = "checkpoints/sft"
-OUT = "checkpoints/dpo"
+SFT_CKPT = os.path.join(CHECKPOINTS_DIR, "sft")
+OUT = os.path.join(CHECKPOINTS_DIR, "dpo")
+RESUME = os.path.join(CHECKPOINTS_DIR, "dpo_resume")
 
 
 def sequence_logprob(model, input_ids, attention_mask, prompt_lens):
@@ -73,14 +77,24 @@ def implicit_accuracy(policy, ref, loader):
         total += margin.numel()
     policy.train(was_training)
     return correct / total
-    
+
+
+def write_log(log, path=os.path.join(LOGS_DIR, "dpo_log.csv")):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "train_loss", "val_implicit_acc"])
+        writer.writerows(log)
 
 
 def main():
+    if not os.path.isfile(os.path.join(SFT_CKPT, "config.json")):
+        raise SystemExit(f"No SFT checkpoint at {SFT_CKPT}. Run train_sft.py first.")
     torch.manual_seed(SEED)
     tok = load_tokenizer()
     _, _, pref_train, pref_val, _ = load_data(tok)
-    policy = load_causal_lm(SFT_CKPT)
+    resume_from = find_resume(RESUME)
+    policy = load_causal_lm(resume_from or SFT_CKPT)
     ref = load_causal_lm(SFT_CKPT)
     ref.eval()
     for param in ref.parameters():
@@ -88,18 +102,28 @@ def main():
     print("reference frozen:", all(not param.requires_grad for param in ref.parameters()))
 
     collate = partial(collate_pref, pad_id=tok.pad_token_id)
-    train_loader = DataLoader(pref_train, BATCH, shuffle=True, collate_fn=collate)
+    order = torch.Generator()
+    order.manual_seed(SEED)  # same shuffle on every run, so a resumed run skips the right batches
+    train_loader = DataLoader(pref_train, BATCH, shuffle=True, collate_fn=collate, generator=order)
     val_loader = DataLoader(pref_val, BATCH, shuffle=False, collate_fn=collate)
     opt = torch.optim.AdamW(policy.parameters(), lr=LR)
 
-    log = [(0, None, implicit_accuracy(policy, ref, val_loader))]
-    print(f"step 0  val acc {log[0][2]:.4f}", flush=True)
+    if resume_from:
+        state = load_resume_state(resume_from, opt)
+        start_step, log, elapsed_done = state["step"], state["log"], state["elapsed_min"]
+        print(f"resuming from step {start_step}", flush=True)
+    else:
+        start_step, elapsed_done = 0, 0.0
+        log = [(0, None, implicit_accuracy(policy, ref, val_loader))]
+        print(f"step 0  val acc {log[0][2]:.4f}", flush=True)
     running = []
     t0 = time.time()
     policy.train()
     n_steps = len(train_loader)
 
     for step, batch in enumerate(train_loader, start=1):
+        if step <= start_step:
+            continue
         margin = pair_margin(policy, ref, batch)
         loss = dpo_loss(margin)
         if step == 1:
@@ -114,12 +138,16 @@ def main():
             val_acc = implicit_accuracy(policy, ref, val_loader)
             log.append((step, train_loss, val_acc))
             running = []
+            elapsed = elapsed_done + (time.time() - t0) / 60
             print(
                 f"step {step}/{n_steps}  train {train_loss:.4f}  val acc {val_acc:.4f}  "
-                f"{(time.time() - t0) / 60:.1f} min",
+                f"{elapsed:.1f} min",
                 flush=True,
             )
+            save_resume(RESUME, policy, tok, opt, {"step": step, "log": log, "elapsed_min": elapsed})
+            write_log(log)
 
+    train_minutes = elapsed_done + (time.time() - t0) / 60
     os.makedirs(OUT, exist_ok=True)
     policy.save_pretrained(OUT)
     tok.save_pretrained(OUT)
@@ -136,10 +164,14 @@ def main():
     axes[1].set_xlabel("step")
     axes[1].set_ylabel("implicit reward accuracy")
     fig.tight_layout()
-    os.makedirs("results", exist_ok=True)
-    fig.savefig("results/fig4_dpo.png", dpi=150)
+    os.makedirs(FIGURES_DIR, exist_ok=True)
+    fig.savefig(os.path.join(FIGURES_DIR, "fig4_dpo.png"), dpi=150)
     plt.close(fig)
+
+    write_log(log)
+    gpu_name = torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU"
     print(f"final train {log[-1][1]:.4f}  val acc {log[-1][2]:.4f}", flush=True)
+    print(f"train minutes {train_minutes:.2f}  device {gpu_name}", flush=True)
     print(f"saved {OUT}", flush=True)
 
 

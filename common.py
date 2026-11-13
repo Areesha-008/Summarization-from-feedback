@@ -3,18 +3,28 @@
 Run `python common.py` to produce Table 1 (results/table1_data.md) and the
 SFT-mask correctness check.
 """
+import json
 import os
 import pickle
+import shutil
 import sys
 
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "starter"))
+# ---- Project paths (absolute, so scripts work from any working directory) ----
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CHECKPOINTS_DIR = os.path.join(ROOT, "checkpoints")   # never committed
+DATA_CACHE = os.path.join(ROOT, "data_cache", "data.pkl")
+RESULTS_DIR = os.path.join(ROOT, "results")           # tables, summaries, analysis
+LOGS_DIR = os.path.join(RESULTS_DIR, "logs")          # per-stage training logs (csv)
+FIGURES_DIR = os.path.join(RESULTS_DIR, "figures")    # plots for the report / blog
+
+sys.path.insert(0, os.path.join(ROOT, "starter"))
 from batching import collate_prompts  # noqa: E402
 from data import load_sft_splits, load_preference_splits, load_eval_posts  # noqa: E402
 
 
-def load_data(tok, cache="data_cache/data.pkl"):
+def load_data(tok, cache=DATA_CACHE):
     """Return (sft_train, sft_val, pref_train, pref_val, eval_posts).
     Tokenising takes minutes, so the result is pickled on the first call."""
     if os.path.exists(cache):
@@ -28,6 +38,69 @@ def load_data(tok, cache="data_cache/data.pkl"):
     with open(cache, "wb") as f:
         pickle.dump(data, f)
     return data
+
+
+# ---- Resume checkpoints (Colab / Kaggle runtimes can disconnect mid-training) ----
+# A resume folder holds the trainable model (save_pretrained), the tokenizer and
+# trainer.pt = optimizer state + whatever loop state the script passes in.
+# Saves go to <dir>_tmp first and are swapped in, so a disconnect during a save
+# still leaves the previous complete copy.
+
+def _resume_step(path):
+    meta = os.path.join(path, "step.json")
+    if os.path.isfile(meta):
+        with open(meta) as f:
+            return json.load(f)["step"]
+    pt = os.path.join(path, "trainer.pt")  # folders saved before step.json existed
+    if os.path.isfile(pt):
+        return torch.load(pt, map_location="cpu", weights_only=True)["step"]
+    return None
+
+
+def find_resume(resume_dir):
+    """Return the copy of resume_dir with the highest finished step, or None."""
+    best, best_step = None, -1
+    for path in (resume_dir, resume_dir + "_tmp", resume_dir + "_bak"):
+        if not os.path.isfile(os.path.join(path, "trainer.pt")):
+            continue
+        step = _resume_step(path)
+        if step is not None and step > best_step:
+            best, best_step = path, step
+    return best
+
+
+def save_resume(resume_dir, model, tok, opt, state):
+    """Save model + tokenizer + optimizer + loop `state` (a dict that must contain 'step')."""
+    tmp, bak = resume_dir + "_tmp", resume_dir + "_bak"
+    if os.path.isdir(tmp):
+        shutil.rmtree(tmp)
+    os.makedirs(tmp)
+    model.save_pretrained(tmp)
+    tok.save_pretrained(tmp)
+    torch.save({**state, "optimizer": opt.state_dict()}, os.path.join(tmp, "trainer.pt"))
+    with open(os.path.join(tmp, "step.json"), "w") as f:  # written last: marks the copy complete
+        json.dump({"step": state["step"]}, f)
+    if os.path.isdir(bak):
+        shutil.rmtree(bak)
+    if os.path.isdir(resume_dir):
+        shutil.move(resume_dir, bak)
+    shutil.move(tmp, resume_dir)
+    if os.path.isdir(bak):
+        shutil.rmtree(bak)
+    print(f"saved resume at step {state['step']}", flush=True)
+
+
+def load_resume_state(path, opt):
+    """Load the optimizer state from a resume folder into `opt` and return the loop state.
+    Load the model itself with load_causal_lm(path) before creating `opt`."""
+    state = torch.load(os.path.join(path, "trainer.pt"), map_location="cpu", weights_only=True)
+    opt.load_state_dict(state.pop("optimizer"))
+    device = next(p.device for group in opt.param_groups for p in group["params"])
+    for s in opt.state.values():
+        for key, value in s.items():
+            if torch.is_tensor(value) and key != "step":
+                s[key] = value.to(device)
+    return state
 
 
 @torch.no_grad()
@@ -100,8 +173,8 @@ if __name__ == "__main__":
         f"| Mean / max prompt length, SFT train (tokens) | {sum(p_lens) / len(p_lens):.1f} / {max(p_lens)} |",
         f"| Mean / max summary length, SFT train (tokens) | {sum(s_lens) / len(s_lens):.1f} / {max(s_lens)} |",
     ])
-    os.makedirs("results", exist_ok=True)
-    with open("results/table1_data.md", "w", encoding="utf-8") as f:
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    with open(os.path.join(RESULTS_DIR, "table1_data.md"), "w", encoding="utf-8") as f:
         f.write("# Table 1 - Data\n\n" + table + "\n")
     print(table)
 
