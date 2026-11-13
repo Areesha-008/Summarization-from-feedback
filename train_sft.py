@@ -59,8 +59,8 @@ def write_samples(path, posts, before, after):
     with open(path, "w", encoding="utf-8") as f:
         for i, post in enumerate(posts):
             f.write(f"### Post {i}\n")
-            f.write(f"{post.prompt[-400:]}\n\n")
-            f.write(f"Reference:\n{post.summary}\n\n")
+            f.write(f"{post['prompt'][-400:]}\n\n")
+            f.write(f"Reference:\n{post['summary']}\n\n")
             f.write(f"Base:\n{before[i]}\n\n")
             f.write(f"SFT:\n{after[i]}\n\n")
             f.write("-" * 40 + "\n\n")
