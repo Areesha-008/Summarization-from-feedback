@@ -4,3 +4,4 @@ datasets
 rouge-score
 numpy
 matplotlib
+gradio

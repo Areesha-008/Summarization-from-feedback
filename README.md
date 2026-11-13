@@ -21,7 +21,8 @@ All losses (SFT, Bradley-Terry, PPO, DPO) are implemented from scratch in PyTorc
 ├── train_dpo.py          # Task 5 - Stage 4: DPO
 ├── evaluate.py           # Task 6 - compare SFT / PPO / DPO on 300 eval posts
 ├── app/                  # Task 8 - web front end
-├── notebooks/            # Colab runners (GPU)
+├── notebooks/            # Colab runner: the whole pipeline with Run all
+├── docs/                 # blog and LinkedIn drafts
 ├── results/
 │   ├── logs/             #   per-stage training logs (csv)
 │   ├── figures/          #   plots used in the report / blog
@@ -54,7 +55,7 @@ order, resumes after a disconnect, and stores `checkpoints/`, `data_cache/` and 
 | Task 5 - DPO | `python train_dpo.py` | `checkpoints/dpo/`, `results/logs/dpo_log.csv`, `results/figures/fig4_dpo.png` |
 | Task 6 - evaluation | `python evaluate.py` | `results/eval_summaries.jsonl`, `results/table3_final.md`, `results/table2_training.md`, `results/correctness_checks.md`, `results/human_eval.csv`, skeletons of `results/samples.md` and `results/analysis.md` |
 | Section 3.2 - human evaluation | fill `results/human_eval.csv`, then `python evaluate.py --tally-human` | `results/table4_human_eval.md` |
-| Task 8 - front end | TODO | |
+| Task 8 - front end | `python app/app.py` (add `--share` on Colab) | Gradio app at http://127.0.0.1:7860 |
 
 Stages must run in order: reward, PPO and DPO all start from `checkpoints/sft/`, and PPO also needs
 `checkpoints/reward/`.
@@ -113,7 +114,19 @@ Qualitative samples: `results/sft_samples.md` (base vs SFT) and `results/samples
 
 ## Checkpoints
 
-TODO (Hugging Face / Google Drive links)
+All checkpoints are on Google Drive (anyone with the link can view):
+[RLHF folder](https://drive.google.com/drive/folders/1OIS3dYjIdyxIpPmGI6Th9ppiSBmWlwp1) →
+[`checkpoints/`](https://drive.google.com/drive/folders/1fFmfMXmVtxbwj7f2shLx8k5xvV4VVSDT)
+
+| Stage | Folder |
+|---|---|
+| SFT | [checkpoints/sft](https://drive.google.com/drive/folders/1scwYLLUXFY9A1rNvPwdhOItuN_Dd5eX_) |
+| Reward model | [checkpoints/reward](https://drive.google.com/drive/folders/1Ylw5Xnn-OT4x1gD8pab1Y_2Z1muhytGu) (`reward_model.pt`; load with `train_reward.load_reward_model`) |
+| PPO | [checkpoints/ppo](https://drive.google.com/drive/folders/1rJ0f_lKOb8E_kgZJDSCykUekBRNJEn1a) |
+| DPO | [checkpoints/dpo](https://drive.google.com/drive/folders/19fG-rM0dBk3uKC7-PIuFrxlRnC98Icms) |
+
+To use them locally, download the four folders into `checkpoints/` in the repository root. The `*_resume` folders are
+only for resuming interrupted training.
 
 ## Correctness checks
 
@@ -126,4 +139,20 @@ TODO (Hugging Face / Google Drive links)
 
 ## Front end
 
-TODO (screenshot)
+`app/app.py` is a Gradio app that loads the SFT, PPO and DPO checkpoints and the reward model. Enter a subreddit,
+title and post; it shows the three greedy summaries side by side, each with its reward-model score and length. Posts
+longer than the 448-token training limit are cut to fit.
+
+```
+pip install -r requirements.txt
+python app/app.py            # http://127.0.0.1:7860
+python app/app.py --share    # public link, e.g. on Colab (last cell of notebooks/colab_runner.ipynb)
+```
+
+TODO: screenshot → `results/figures/fig5_frontend.png`
+
+## Write-up
+
+- Analysis (Task 7): [`results/analysis.md`](results/analysis.md)
+- Qualitative samples: [`results/samples.md`](results/samples.md)
+- Medium blog draft: [`docs/blog.md`](docs/blog.md) · LinkedIn post draft: [`docs/linkedin.md`](docs/linkedin.md)

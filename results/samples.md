@@ -1,6 +1,9 @@
 # Qualitative samples (Section 4.6)
 
-Posts were picked by reward-model score difference (a proxy). Read each one and say in your own words whether PPO or DPO is *actually* better or worse than SFT and why. Keep at least two clearly better and two clearly worse examples; swap posts in from `eval_summaries.jsonl` if needed.
+Samples 1–3 are the posts where the reward model prefers PPO/DPO most over SFT, 4–6 where it prefers SFT most, and
+7–10 are random. Clearly better than SFT: 1, 2, 3 (PPO), 8 (DPO), 9 (PPO). Clearly worse: 4 (PPO and DPO), 5 (PPO),
+6 (DPO). Across all ten, PPO and DPO are more specific and closer to the post's wording than SFT; their failures are
+repetition, drifting into minor details and truncation at 48 tokens.
 
 ## Sample 1 (eval post 206; picked because: reward model prefers PPO/DPO most over SFT)
 
@@ -18,7 +21,7 @@ TL;DR:
 - **PPO** (r_phi +4.60, 48 tokens): Met a girl last week and go study abroad in two weeks from today. Stay in contact and stay friends until I can come back and visit and see where it's gone from there. Don't want to leave this city but I also know
 - **DPO** (r_phi +0.52, 31 tokens): Girlfriend invited me back to her apartment after a going away party for a coworker, I'm really not sure if I should stay or go.
 
-**Why:** _TODO_
+**Why:** **PPO is clearly better than SFT.** SFT invents facts ("I'm a girl, and I'm in a relationship"); PPO gets the real situation — met a girl, leaving to study abroad, wants to stay in touch — but it is cut off at 48 tokens and copies the title. DPO is also wrong ("Girlfriend invited me…").
 
 ## Sample 2 (eval post 264; picked because: reward model prefers PPO/DPO most over SFT)
 
@@ -36,7 +39,7 @@ TL;DR:
 - **PPO** (r_phi +2.83, 48 tokens): I want to make my life more fulfilling and more purposeful. I've always wanted more and I feel like now is the time for more. What would you dare or challenge me to do for a year, starting today, to make my life
 - **DPO** (r_phi +2.85, 45 tokens): I want to be a rebel with an extraordinary life who makes an impact on my life. What would you dare or challenge me to do for a year, starting today, to make my life more fulfilling and more purposeful?
 
-**Why:** _TODO_
+**Why:** **PPO and DPO are clearly better.** They keep the actual question ("what would you dare me to do for a year…"), which SFT drops; SFT just repeats "I'm not sure what to do". Both copy the post almost word for word, and PPO is truncated.
 
 ## Sample 3 (eval post 21; picked because: reward model prefers PPO/DPO most over SFT)
 
@@ -56,7 +59,7 @@ TL;DR:
 - **PPO** (r_phi +3.06, 35 tokens): Girl I've been seeing for ~3 months, she lives an hour away and I have conflicting feelings depending on whether I'm with her or not. Is this normal?
 - **DPO** (r_phi +4.01, 47 tokens): Girl I've been seeing lives an hour away and I tend to focus on her negative attributes and ruminate about the things I don't like about her. Is this normal? Is this indicative of some kind of incompatibility?
 
-**Why:** _TODO_
+**Why:** **PPO is clearly better.** It matches the reference: GF of ~3 months an hour away, conflicting feelings depending on whether he is with her, "is this normal?". SFT's summary is self-contradictory. DPO is good but adds a question the poster did not ask ("incompatibility?").
 
 ## Sample 4 (eval post 194; picked because: reward model prefers SFT most over PPO/DPO)
 
@@ -80,7 +83,7 @@ TL;DR:
 - **PPO** (r_phi -0.85, 48 tokens): forgot to register my dog, got it microchipped, got it registered at address, got it registered at 24 hours after I got it. Now I've got to pay $400 in fines and have my dog taken
 - **DPO** (r_phi +1.47, 38 tokens): Dog barking all day, got him microchipped, had spent a fortune getting him registered, forgot to register him, got him microchipped, got fined, dog taken away.
 
-**Why:** _TODO_
+**Why:** **PPO and DPO are clearly worse.** SFT is a clean one-sentence summary. PPO repeats "got it registered" three times and is cut off; DPO is contradictory ("spent a fortune getting him registered, forgot to register him") and invents barking. Longer, detail-copying output with repetition — the length bias at work.
 
 ## Sample 5 (eval post 116; picked because: reward model prefers SFT most over PPO/DPO)
 
@@ -102,7 +105,7 @@ TL;DR:
 - **PPO** (r_phi +0.25, 48 tokens): Neighbor keeps calling the cops on us about parking too close to our unit. We live in a little parkway area and it's just 8 townhouses (two 4-unit structures) that share 4 public parking spots
 - **DPO** (r_phi +1.91, 48 tokens): Neighbor keeps calling the cops on us when we park in public parking spots. We live in a quiet little parkway area. How do I get the crabby old woman (I'm positive it's her) to leave us alone
 
-**Why:** _TODO_
+**Why:** **PPO is clearly worse.** SFT is almost the human reference (abandoned-car claim + "how do I get her to leave us alone?"). PPO drifts into irrelevant parking-lot details, loses both the claim and the question, and is truncated. DPO keeps the question but adds wrong details and is also truncated.
 
 ## Sample 6 (eval post 265; picked because: reward model prefers SFT most over PPO/DPO)
 
@@ -120,7 +123,7 @@ TL;DR:
 - **PPO** (r_phi +2.25, 43 tokens): Conservative kid posted this quote, but I'm not sure as to the validity of his statement.  Maybe my fellow reddit can shed some light or prove actual specific data either supporting or going against said quote.
 - **DPO** (r_phi +0.52, 33 tokens): Conservative kid posted this quote, but I'm not sure as to the validity of his statement, and I'm not sure as to the validity of his statement.
 
-**Why:** _TODO_
+**Why:** **DPO is clearly worse.** It repeats the same clause twice and says nothing about the quote. SFT and PPO are nearly identical and both just copy the poster's opening sentences — none of the three summarises what the quote actually argues.
 
 ## Sample 7 (eval post 19; picked because: random)
 
@@ -142,7 +145,7 @@ TL;DR:
 - **PPO** (r_phi -0.07, 31 tokens): Ex got with a guy at the cinema, punched me in the face, and now I'm a small guy and can't handle it anymore.
 - **DPO** (r_phi +0.57, 30 tokens): Ex got with a guy she was cheating with me with and told him what i called and her. I ignored it and now its your turn.
 
-**Why:** _TODO_
+**Why:** **No clear winner; all three are poor.** PPO is the only one to mention the key event (getting punched), but attributes it wrongly; SFT and DPO are garbled, and DPO ends with "now its your turn" from the post's AskReddit framing.
 
 ## Sample 8 (eval post 146; picked because: random)
 
@@ -160,7 +163,7 @@ TL;DR:
 - **PPO** (r_phi +1.32, 48 tokens): Boyfriend is going on a trip to visit friend, and will meet up with him when he arrives. They have been good friends since before we dated. They have been good friends since before we dated. Should I be concerned about this?
 - **DPO** (r_phi +2.48, 45 tokens): My boyfriend is going on a trip to visit a friend who is currently overseas. They have been good friends since before we dated. They have a relationship, but I am uncomfortable with the idea of them sleeping together.
 
-**Why:** _TODO_
+**Why:** **DPO is better than SFT.** It covers the trip, the past relationship and the discomfort about sleeping arrangements. SFT is correct but thin and misses the "am I overreacting?" question; PPO repeats a sentence and is cut off.
 
 ## Sample 9 (eval post 73; picked because: random)
 
@@ -182,7 +185,7 @@ TL;DR:
 - **PPO** (r_phi +1.85, 37 tokens): got caught trying to sneak over to girlfriend's house while her parents weren't home, got caught and now I won't be able to see her at all. Feeling depressed inside.
 - **DPO** (r_phi -0.26, 48 tokens): I got caught trying to sneak over to my girlfriend's house when her parents weren't home, got caught and got grounded for a month, won't be seeing her on valentines day. I feel like I disappointed her and it's
 
-**Why:** _TODO_
+**Why:** **PPO is better.** It gives the cause (caught sneaking over, can't see her) and the feeling, close to the reference. SFT is generic and has no event; DPO has the most detail but is cut off mid-sentence.
 
 ## Sample 10 (eval post 236; picked because: random)
 
@@ -206,4 +209,4 @@ TL;DR:
 - **PPO** (r_phi +0.87, 41 tokens): Girlfriend broke up with me last night. She still likes me but she needs to focus on herself. I don't want to lose her. What can I do to make this easier for me?
 - **DPO** (r_phi +0.35, 37 tokens): Girlfriend broke up with me last night. She wants to focus on herself and not lose me. I feel like I'm too depressed and moody. What should I do?
 
-**Why:** _TODO_
+**Why:** **PPO and DPO are better.** Both include that she broke up to focus on herself and end with a question, like the reference. SFT is generic ("not sure if I'm going to be able to handle it").
