@@ -13,11 +13,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, RESULTS_DIR, find_resume,
-                    generate_summaries, load_data, load_resume_state, save_resume,
+                    generate_summaries, load_data, load_lm, load_resume_state, save_resume,
                     token_logprobs)
 from batching import collate_sft  # path already set by common
 from config import SEED
-from models import load_causal_lm, load_tokenizer
+from models import load_tokenizer
 
 
 LR = 5e-5
@@ -84,7 +84,8 @@ def main():
     sample_posts = eval_posts[:5]
 
     resume_from = find_resume(RESUME)
-    model = load_causal_lm(resume_from) if resume_from else load_causal_lm()
+    model = load_lm(resume_from)
+    print(f"model dtype {model.dtype}", flush=True)
 
     collate = partial(collate_sft, pad_id=tok.pad_token_id)
     order = torch.Generator()
