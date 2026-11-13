@@ -4,8 +4,8 @@ Trainable policy + frozen reference, both from SFT. Sequence logprob = sum over 
 tokens. DPO loss with beta=0.1. 1 epoch, AdamW lr 2e-6, batch 8 pairs.
 Log loss + implicit reward accuracy every 250 steps. Save to checkpoints/dpo/.
 
-The functions and the loop body below are still pseudocode. Replace each TODO
-with real Python. Leave the rest as it is.
+Outputs: checkpoints/dpo/, results/logs/dpo_log.csv, results/figures/fig4_dpo.png.
+Correctness checks printed at start: reference frozen, first-step loss = log 2.
 """
 import csv
 import math
@@ -74,10 +74,19 @@ def implicit_accuracy(policy, ref, loader):
         total += margin.numel()
     policy.train(was_training)
     return correct / total
-    
+
+
+def write_log(log, path=os.path.join(LOGS_DIR, "dpo_log.csv")):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "train_loss", "val_implicit_acc"])
+        writer.writerows(log)
 
 
 def main():
+    if not os.path.isfile(os.path.join(SFT_CKPT, "config.json")):
+        raise SystemExit(f"No SFT checkpoint at {SFT_CKPT}. Run train_sft.py first.")
     torch.manual_seed(SEED)
     tok = load_tokenizer()
     _, _, pref_train, pref_val, _ = load_data(tok)
@@ -120,7 +129,9 @@ def main():
                 f"{(time.time() - t0) / 60:.1f} min",
                 flush=True,
             )
+            write_log(log)  # keep the partial log if the runtime disconnects
 
+    train_minutes = (time.time() - t0) / 60
     os.makedirs(OUT, exist_ok=True)
     policy.save_pretrained(OUT)
     tok.save_pretrained(OUT)
@@ -141,12 +152,10 @@ def main():
     fig.savefig(os.path.join(FIGURES_DIR, "fig4_dpo.png"), dpi=150)
     plt.close(fig)
 
-    os.makedirs(LOGS_DIR, exist_ok=True)
-    with open(os.path.join(LOGS_DIR, "dpo_log.csv"), "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["step", "train_loss", "val_implicit_acc"])
-        writer.writerows(log)
+    write_log(log)
+    gpu_name = torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU"
     print(f"final train {log[-1][1]:.4f}  val acc {log[-1][2]:.4f}", flush=True)
+    print(f"train minutes {train_minutes:.2f}  device {gpu_name}", flush=True)
     print(f"saved {OUT}", flush=True)
 
 
