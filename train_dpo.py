@@ -7,6 +7,7 @@ Log loss + implicit reward accuracy every 250 steps. Save to checkpoints/dpo/.
 The functions and the loop body below are still pseudocode. Replace each TODO
 with real Python. Leave the rest as it is.
 """
+import csv
 import math
 import os
 import time
@@ -19,7 +20,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from common import load_data, token_logprobs
+from common import CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, load_data, token_logprobs
 from batching import collate_pref
 from config import SEED
 from models import load_causal_lm, load_tokenizer
@@ -28,8 +29,8 @@ BETA = 0.1
 LR = 2e-6
 BATCH = 8
 LOG_EVERY = 250
-SFT_CKPT = "checkpoints/sft"
-OUT = "checkpoints/dpo"
+SFT_CKPT = os.path.join(CHECKPOINTS_DIR, "sft")
+OUT = os.path.join(CHECKPOINTS_DIR, "dpo")
 
 
 def sequence_logprob(model, input_ids, attention_mask, prompt_lens):
@@ -136,9 +137,15 @@ def main():
     axes[1].set_xlabel("step")
     axes[1].set_ylabel("implicit reward accuracy")
     fig.tight_layout()
-    os.makedirs("results", exist_ok=True)
-    fig.savefig("results/fig4_dpo.png", dpi=150)
+    os.makedirs(FIGURES_DIR, exist_ok=True)
+    fig.savefig(os.path.join(FIGURES_DIR, "fig4_dpo.png"), dpi=150)
     plt.close(fig)
+
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    with open(os.path.join(LOGS_DIR, "dpo_log.csv"), "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "train_loss", "val_implicit_acc"])
+        writer.writerows(log)
     print(f"final train {log[-1][1]:.4f}  val acc {log[-1][2]:.4f}", flush=True)
     print(f"saved {OUT}", flush=True)
 

@@ -51,7 +51,7 @@ stores `checkpoints/`, `data_cache/` and `results/` on Google Drive.
 | Task 2 - SFT | `python train_sft.py` | `checkpoints/sft/`, `results/logs/sft_log.csv`, `results/figures/fig1_sft_loss.png`, `results/sft_samples.md` |
 | Task 3 - reward model | `python train_reward.py` | TODO |
 | Task 4 - PPO | `python train_ppo.py` | TODO |
-| Task 5 - DPO | `python train_dpo.py` | TODO |
+| Task 5 - DPO | `python train_dpo.py` | `checkpoints/dpo/`, `results/logs/dpo_log.csv`, `results/figures/fig4_dpo.png` |
 | Task 6 - evaluation | `python evaluate.py` | TODO |
 | Task 8 - front end | TODO | |
 
