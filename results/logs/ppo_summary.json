@@ -1,0 +1,12 @@
+{
+  "final_train_loss": -0.011042437158963268,
+  "final_mean_reward": 2.2727818489074707,
+  "last10_mean_reward": 1.9884209632873535,
+  "minutes": 14.327967496713002,
+  "check_reference_frozen": true,
+  "check_reward_model_frozen": true,
+  "check_iteration1_kl": 0.0,
+  "check_max_first_epoch_ratio_dev": 0.0,
+  "check_max_first_epoch_clip_frac": 0.0,
+  "gpu": "NVIDIA A100-SXM4-80GB"
+}

@@ -1,0 +1,6 @@
+{
+  "final_train_loss": 0.6018024245500565,
+  "val_pairwise_acc": 0.642,
+  "minutes": 20.567792654037476,
+  "gpu": "NVIDIA A100-SXM4-80GB"
+}

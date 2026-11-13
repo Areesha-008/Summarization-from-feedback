@@ -1,0 +1,9 @@
+{
+  "final_train_loss": 0.6181035735607148,
+  "val_implicit_acc": 0.61,
+  "minutes": 34.63160992066065,
+  "check_reference_frozen": true,
+  "check_first_step_loss": null,
+  "expected_first_step_loss": 0.6931471805599453,
+  "gpu": "NVIDIA A100-SXM4-80GB"
+}
