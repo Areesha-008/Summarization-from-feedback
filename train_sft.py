@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 
-from common import generate_summaries, load_data, token_logprobs
+from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, RESULTS_DIR,
+                    generate_summaries, load_data, token_logprobs)
 from batching import collate_sft  # path already set by common
 from config import SEED
 from models import load_causal_lm, load_tokenizer
@@ -23,8 +24,8 @@ LR = 5e-5
 BATCH = 16
 LOG_EVERY = 250
 MAX_NEW = 48
-OUT = "checkpoints/sft"
-RESUME = "checkpoints/sft_resume"
+OUT = os.path.join(CHECKPOINTS_DIR, "sft")
+RESUME = os.path.join(CHECKPOINTS_DIR, "sft_resume")
 
 def sft_loss(model,batch):
     device = model.device
@@ -56,7 +57,7 @@ def evaluate(model, loader):
 
 
 
-def write_log(log, path="results/sft_log.csv"):
+def write_log(log, path=os.path.join(LOGS_DIR, "sft_log.csv")):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -194,7 +195,7 @@ def main():
     after = generate_summaries(model, tok, sample_posts, MAX_NEW)
 
     write_log(log)
-    write_samples("results/sft_samples.md", sample_posts, before, after)
+    write_samples(os.path.join(RESULTS_DIR, "sft_samples.md"), sample_posts, before, after)
 
     # Plot training and validation curves
     train_steps = [row[0] for row in log if row[1] is not None]
@@ -210,7 +211,8 @@ def main():
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig("results/fig1_sft_loss.png", dpi=150)
+    os.makedirs(FIGURES_DIR, exist_ok=True)
+    plt.savefig(os.path.join(FIGURES_DIR, "fig1_sft_loss.png"), dpi=150)
     plt.close()
 
     gpu_name = torch.cuda.get_device_name() if torch.cuda.is_available() else "CPU"

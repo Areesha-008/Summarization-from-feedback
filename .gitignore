@@ -1,7 +1,19 @@
 # model checkpoints are uploaded to HF / Drive, never committed
 checkpoints/
 data_cache/
+*.pt
+*.bin
+*.safetensors
 
+# Python
 __pycache__/
 *.pyc
 .venv/
+venv/
+.env
+
+# Jupyter / editors / OS
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store

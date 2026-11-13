@@ -9,12 +9,20 @@ import sys
 
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "starter"))
+# ---- Project paths (absolute, so scripts work from any working directory) ----
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CHECKPOINTS_DIR = os.path.join(ROOT, "checkpoints")   # never committed
+DATA_CACHE = os.path.join(ROOT, "data_cache", "data.pkl")
+RESULTS_DIR = os.path.join(ROOT, "results")           # tables, summaries, analysis
+LOGS_DIR = os.path.join(RESULTS_DIR, "logs")          # per-stage training logs (csv)
+FIGURES_DIR = os.path.join(RESULTS_DIR, "figures")    # plots for the report / blog
+
+sys.path.insert(0, os.path.join(ROOT, "starter"))
 from batching import collate_prompts  # noqa: E402
 from data import load_sft_splits, load_preference_splits, load_eval_posts  # noqa: E402
 
 
-def load_data(tok, cache="data_cache/data.pkl"):
+def load_data(tok, cache=DATA_CACHE):
     """Return (sft_train, sft_val, pref_train, pref_val, eval_posts).
     Tokenising takes minutes, so the result is pickled on the first call."""
     if os.path.exists(cache):
@@ -100,8 +108,8 @@ if __name__ == "__main__":
         f"| Mean / max prompt length, SFT train (tokens) | {sum(p_lens) / len(p_lens):.1f} / {max(p_lens)} |",
         f"| Mean / max summary length, SFT train (tokens) | {sum(s_lens) / len(s_lens):.1f} / {max(s_lens)} |",
     ])
-    os.makedirs("results", exist_ok=True)
-    with open("results/table1_data.md", "w", encoding="utf-8") as f:
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    with open(os.path.join(RESULTS_DIR, "table1_data.md"), "w", encoding="utf-8") as f:
         f.write("# Table 1 - Data\n\n" + table + "\n")
     print(table)
 
