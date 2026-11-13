@@ -63,13 +63,66 @@ bfloat16, and `transformers` >= 5 would otherwise train in bfloat16, where small
 Each script prints `model dtype torch.float32` at start-up, and writes its final numbers and correctness
 checks to `results/logs/<stage>_summary.json`, which `evaluate.py` turns into Table 2 and the checks below.
 
+## Results
+
+All numbers come from one run on an NVIDIA A100 (Colab). Raw logs are in `results/logs/`, every evaluation
+summary is in `results/eval_summaries.jsonl`, and the analysis is in `results/analysis.md`.
+
+### Table 1 - Data
+
+| | |
+|---|---|
+| SFT train / validation pairs | 20000 / 500 |
+| Preference train / validation pairs | 20000 / 1000 |
+| Evaluation posts | 300 |
+| Mean / max prompt length, SFT train (tokens) | 317.4 / 448 |
+| Mean / max summary length, SFT train (tokens) | 33.8 / 48 |
+
+### Table 2 - Training
+
+| Stage | Final train loss | Validation metric | Time / GPU |
+|---|---|---|---|
+| SFT | 2.3391 | val. loss: 2.3508 | 10.8 min / NVIDIA A100-SXM4-80GB |
+| Reward model | 0.6018 | pairwise acc.: 0.6420 | 20.6 min / NVIDIA A100-SXM4-80GB |
+| PPO | -0.0110 | final mean r_phi: 2.2728 (last-10 mean 1.9884) | 14.3 min / NVIDIA A100-SXM4-80GB |
+| DPO | 0.6181 | implicit reward acc.: 0.6100 | 34.6 min / NVIDIA A100-SXM4-80GB |
+
+### Table 3 - Final comparison (300 evaluation posts)
+
+| Policy | Mean r_phi | Win rate vs. SFT | KL to SFT | Length | ROUGE-L |
+|---|---|---|---|---|---|
+| SFT | 0.571 | – | 0 | 30.6 | 0.256 |
+| PPO | 1.932 | 0.903 | 5.157 | 38.9 | 0.242 |
+| DPO | 1.813 | 0.893 | 3.192 | 39.3 | 0.247 |
+
+### Table 4 - Human evaluation (30 posts)
+
+TODO: fill `results/human_eval.csv` (both members, blind), then run `python evaluate.py --tally-human`.
+
+### Figures
+
+| SFT loss | Reward model |
+|---|---|
+| ![SFT training and validation loss](results/figures/fig1_sft_loss.png) | ![Reward-model loss and validation accuracy](results/figures/fig2_reward.png) |
+
+| PPO | DPO |
+|---|---|
+| ![PPO: mean reward, KL, length and clip fraction](results/figures/fig3_ppo.png) | ![DPO loss and implicit reward accuracy](results/figures/fig4_dpo.png) |
+
+Qualitative samples: `results/sft_samples.md` (base vs SFT) and `results/samples.md` (SFT vs PPO vs DPO).
+
 ## Checkpoints
 
 TODO (Hugging Face / Google Drive links)
 
 ## Correctness checks
 
-TODO: paste `results/correctness_checks.md` here after `python evaluate.py`.
+- **SFT mask** (PASS): decoding the tokens where summary_mask = 1 gives exactly the summary + EOS, e.g. `' Me and my sister were going to the park, put my sister in her carseat, left her there for thirty minutes, mom saved her from my ignorance, got grounded for a month.<|endoftext|>'`.
+- **Frozen models** (PASS): every parameter of pi_ref and r_phi has requires_grad = False in Stage 3 (ref True, reward True) and of pi_ref in Stage 4 (True).
+- **PPO, first iteration** (PASS): mean KL to the reference = 0.00e+00.
+- **PPO, every iteration** (PASS): in the first of the K epochs, max |r_t(theta) - 1| over all iterations = 0.00e+00, max clip fraction = 0.0.
+- **DPO, first step** (PASS): before any update the implicit reward accuracy on the 1,000 validation pairs is 0.000, i.e. every margin beta*(log-ratio_w - log-ratio_l) is exactly 0 because pi_theta = pi_ref, so the loss is -log sigma(0) = log 2 = 0.6931. (The printed first-step loss was not kept because that DPO run resumed from a save made before the value was recorded.)
+- **Padding**: prompts for `generate` are left-padded (`collate_prompts`); the reward model reads the hidden state at index `attention_mask.sum(1) - 1` of right-padded rows, i.e. the last real token. Real tokens are always found with `attention_mask`, never with `input_ids != pad_token_id`.
 
 ## Front end
 

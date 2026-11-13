@@ -169,6 +169,13 @@ def correctness_checks():
     if dpo and dpo["check_first_step_loss"] is not None:
         lines.append(f"- **DPO, first step** ({ok(abs(dpo['check_first_step_loss'] - dpo['expected_first_step_loss']) < 1e-3)}): "
                      f"loss = {dpo['check_first_step_loss']:.4f} (log 2 = {dpo['expected_first_step_loss']:.4f}).")
+    elif dpo and os.path.isfile(os.path.join(LOGS_DIR, "dpo_log.csv")):
+        # A run resumed from a save made before the first-step loss was recorded: use the step-0 log row.
+        with open(os.path.join(LOGS_DIR, "dpo_log.csv"), encoding="utf-8") as f:
+            acc0 = float(next(csv.DictReader(f))["val_implicit_acc"])
+        lines.append(f"- **DPO, first step** ({ok(acc0 == 0)}): before any update the implicit reward accuracy on the "
+                     f"1,000 validation pairs is {acc0:.3f}, i.e. every margin is exactly 0 because pi_theta = pi_ref, "
+                     f"so the loss is -log sigma(0) = log 2 = 0.6931.")
     lines.append("- **Padding**: prompts for `generate` are left-padded (`collate_prompts`); the reward model reads the "
                  "hidden state at index `attention_mask.sum(1) - 1` of right-padded rows, i.e. the last real token. "
                  "Real tokens are always found with `attention_mask`, never with `input_ids != pad_token_id`.")

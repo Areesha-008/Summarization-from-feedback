@@ -1,0 +1,8 @@
+{
+  "sft_mask_check_passed": true,
+  "mask_check_examples": [
+    " Me and my sister were going to the park, put my sister in her carseat, left her there for thirty minutes, mom saved her from my ignorance, got grounded for a month.<|endoftext|>",
+    " I started dating my friends ex after he told me he was ok with it, but then he decided he wasn't and we're no longer friends. Am I in the wrong here and what can I do to make it right?<|endoftext|>"
+  ],
+  "gpu": "NVIDIA A100-SXM4-80GB"
+}

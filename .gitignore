@@ -17,3 +17,6 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# answer key for the blind human evaluation: commit it only after both members have picked
+results/human_eval_key.csv
