@@ -5,6 +5,7 @@ Log train/val loss every 250 steps. Save to checkpoints/sft/.
 """
 import csv
 import os
+import shutil
 import time
 from functools import partial
 
@@ -23,6 +24,7 @@ BATCH = 16
 LOG_EVERY = 250
 MAX_NEW = 48
 OUT = "checkpoints/sft"
+RESUME = "checkpoints/sft_resume"
 
 def sft_loss(model,batch):
     device = model.device
@@ -54,6 +56,55 @@ def evaluate(model, loader):
 
 
 
+def write_log(log, path="results/sft_log.csv"):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "train_loss", "val_loss"])
+        writer.writerows(log)
+
+
+def find_resume():
+    """Resume dir with the highest finished step. A mid-save disconnect keeps the previous one."""
+    best, best_step = None, -1
+    for path in (RESUME, RESUME + "_tmp", RESUME + "_bak"):
+        pt = os.path.join(path, "trainer.pt")
+        if not os.path.isfile(pt):
+            continue
+        step = torch.load(pt, map_location="cpu", weights_only=False)["step"]
+        if step > best_step:
+            best, best_step = path, step
+    return best
+
+
+def save_resume(model, tok, opt, step, log, before, elapsed_min):
+    tmp = RESUME + "_tmp"
+    if os.path.isdir(tmp):
+        shutil.rmtree(tmp)
+    os.makedirs(tmp, exist_ok=True)
+    model.save_pretrained(tmp)
+    tok.save_pretrained(tmp)
+    torch.save(
+        {
+            "step": step,
+            "optimizer": opt.state_dict(),
+            "log": log,
+            "before": before,
+            "elapsed_min": elapsed_min,
+        },
+        os.path.join(tmp, "trainer.pt"),
+    )
+    bak = RESUME + "_bak"
+    if os.path.isdir(bak):
+        shutil.rmtree(bak)
+    if os.path.isdir(RESUME):
+        shutil.move(RESUME, bak)
+    shutil.move(tmp, RESUME)
+    if os.path.isdir(bak):
+        shutil.rmtree(bak)
+    print(f"saved resume at step {step}", flush=True)
+
+
 def write_samples(path, posts, before, after):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -70,24 +121,53 @@ def main():
     torch.manual_seed(SEED)
     tok = load_tokenizer()
     sft_train, sft_val, _, _, eval_posts = load_data(tok)
-    model = load_causal_lm() 
-
     sample_posts = eval_posts[:5]
-    before = generate_summaries(model, tok, sample_posts, MAX_NEW)
+
+    resume_from = find_resume()
+    start_step = 0
+    log = []
+    before = None
+    elapsed_done = 0.0
+    opt_state = None
+    if resume_from:
+        model = load_causal_lm(resume_from)
+        ckpt = torch.load(os.path.join(resume_from, "trainer.pt"), map_location="cpu", weights_only=False)
+        start_step = ckpt["step"]
+        log = ckpt["log"]
+        before = ckpt["before"]
+        elapsed_done = ckpt["elapsed_min"]
+        opt_state = ckpt["optimizer"]
+        print(f"resuming from step {start_step}", flush=True)
+    else:
+        model = load_causal_lm()
+        before = generate_summaries(model, tok, sample_posts, MAX_NEW)
 
     collate = partial(collate_sft, pad_id=tok.pad_token_id)
-    train_loader = DataLoader(sft_train, BATCH, shuffle=True, collate_fn=collate)
+    order = torch.Generator()
+    order.manual_seed(SEED)
+    train_loader = DataLoader(sft_train, BATCH, shuffle=True, collate_fn=collate, generator=order)
     val_loader = DataLoader(sft_val, BATCH, shuffle=False, collate_fn=collate)
+    n_steps = len(train_loader)
 
     opt = torch.optim.AdamW(model.parameters(), lr=LR)
-    log = []      # rows of (step, train_loss, val_loss)
-    running = []  # train losses since last log
+    if opt_state is not None:
+        opt.load_state_dict(opt_state)
+        for state in opt.state.values():
+            for key, value in state.items():
+                if torch.is_tensor(value):
+                    state[key] = value.to(model.device)
+    running = []
 
-    log.append((0, None, evaluate(model, val_loader)))
+    if start_step == 0:
+        log.append((0, None, evaluate(model, val_loader)))
     t0 = time.time()
     model.train()
+    if start_step:
+        print(f"skipping {start_step} finished steps", flush=True)
 
     for step, batch in enumerate(train_loader, start=1):
+        if step <= start_step:
+            continue
         loss = sft_loss(model, batch)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -95,15 +175,17 @@ def main():
         opt.zero_grad()
 
         running.append(loss.item())
-        if step % LOG_EVERY == 0 or step == len(train_loader):
+        if step % LOG_EVERY == 0 or step == n_steps:
             train_mean = sum(running) / len(running)
             val = evaluate(model, val_loader)
             log.append((step, train_mean, val))
             running = []
-            elapsed = (time.time() - t0) / 60
-            print(f"step {step}  train {train_mean:.4f}  val {val:.4f}  {elapsed:.2f} min")
+            elapsed = elapsed_done + (time.time() - t0) / 60
+            print(f"step {step}  train {train_mean:.4f}  val {val:.4f}  {elapsed:.2f} min", flush=True)
+            save_resume(model, tok, opt, step, log, before, elapsed)
+            write_log(log)
 
-    train_minutes = (time.time() - t0) / 60
+    train_minutes = elapsed_done + (time.time() - t0) / 60
 
     os.makedirs(OUT, exist_ok=True)
     model.save_pretrained(OUT)
@@ -111,12 +193,7 @@ def main():
 
     after = generate_summaries(model, tok, sample_posts, MAX_NEW)
 
-    os.makedirs("results", exist_ok=True)
-    with open("results/sft_log.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["step", "train_loss", "val_loss"])
-        writer.writerows(log)
-
+    write_log(log)
     write_samples("results/sft_samples.md", sample_posts, before, after)
 
     # Plot training and validation curves
