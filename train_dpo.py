@@ -22,10 +22,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from common import (CHECKPOINTS_DIR, FIGURES_DIR, LOGS_DIR, find_resume, load_data,
-                    load_resume_state, save_resume, token_logprobs)
+                    load_lm, load_resume_state, save_resume, token_logprobs)
 from batching import collate_pref
 from config import SEED
-from models import load_causal_lm, load_tokenizer
+from models import load_tokenizer
 
 BETA = 0.1
 LR = 2e-6
@@ -94,8 +94,9 @@ def main():
     tok = load_tokenizer()
     _, _, pref_train, pref_val, _ = load_data(tok)
     resume_from = find_resume(RESUME)
-    policy = load_causal_lm(resume_from or SFT_CKPT)
-    ref = load_causal_lm(SFT_CKPT)
+    policy = load_lm(resume_from or SFT_CKPT)
+    ref = load_lm(SFT_CKPT)
+    print(f"model dtype {policy.dtype}", flush=True)
     ref.eval()
     for param in ref.parameters():
         param.requires_grad_(False)

@@ -49,13 +49,16 @@ stores `checkpoints/`, `data_cache/` and `results/` on Google Drive.
 |------|---------|----------|
 | Task 1 - data table + mask check | `python common.py` | `results/table1_data.md` |
 | Task 2 - SFT | `python train_sft.py` | `checkpoints/sft/`, `results/logs/sft_log.csv`, `results/figures/fig1_sft_loss.png`, `results/sft_samples.md` |
-| Task 3 - reward model | `python train_reward.py` | TODO |
+| Task 3 - reward model | `python train_reward.py` | `checkpoints/reward/reward_model.pt`, `results/logs/reward_log.csv`, `results/logs/reward_val_scores.jsonl`, `results/figures/fig2_reward.png` |
 | Task 4 - PPO | `python train_ppo.py` | TODO |
 | Task 5 - DPO | `python train_dpo.py` | `checkpoints/dpo/`, `results/logs/dpo_log.csv`, `results/figures/fig4_dpo.png` |
 | Task 6 - evaluation | `python evaluate.py` | TODO |
 | Task 8 - front end | TODO | |
 
 Stages must run in order: reward, PPO and DPO all start from `checkpoints/sft/`.
+Every stage loads models through `common.load_lm`, which casts to float32 (SmolLM2 is stored in
+bfloat16, and `transformers` >= 5 would otherwise train in bfloat16, where small AdamW updates are lost).
+Each script prints `model dtype torch.float32` at start-up.
 
 ## Checkpoints
 

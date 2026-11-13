@@ -22,6 +22,17 @@ FIGURES_DIR = os.path.join(RESULTS_DIR, "figures")    # plots for the report / b
 sys.path.insert(0, os.path.join(ROOT, "starter"))
 from batching import collate_prompts  # noqa: E402
 from data import load_sft_splits, load_preference_splits, load_eval_posts  # noqa: E402
+from models import load_causal_lm  # noqa: E402
+
+
+def load_lm(name_or_path=None):
+    """load_causal_lm, always in float32.
+
+    SmolLM2 is stored in bfloat16 and transformers >= 5 loads checkpoints in their
+    stored dtype by default. Training in bfloat16 rounds most small AdamW updates
+    away, and the T4 has no native bfloat16, so every stage casts to float32."""
+    model = load_causal_lm(name_or_path) if name_or_path else load_causal_lm()
+    return model.float()
 
 
 def load_data(tok, cache=DATA_CACHE):
@@ -92,7 +103,7 @@ def save_resume(resume_dir, model, tok, opt, state):
 
 def load_resume_state(path, opt):
     """Load the optimizer state from a resume folder into `opt` and return the loop state.
-    Load the model itself with load_causal_lm(path) before creating `opt`."""
+    Load the model itself with load_lm(path) before creating `opt`."""
     state = torch.load(os.path.join(path, "trainer.pt"), map_location="cpu", weights_only=True)
     opt.load_state_dict(state.pop("optimizer"))
     device = next(p.device for group in opt.param_groups for p in group["params"])
@@ -156,7 +167,7 @@ def token_logprobs(model, input_ids, attention_mask, prompt_lens):
 
 
 if __name__ == "__main__":
-    from models import load_tokenizer, load_causal_lm
+    from models import load_tokenizer
     from batching import collate_sft
 
     tok = load_tokenizer()
@@ -179,7 +190,7 @@ if __name__ == "__main__":
     print(table)
 
     # ---- Task 1.3: SFT mask check ----
-    model = load_causal_lm()
+    model = load_lm()
     model.eval()
     batch = sft_train[:8]
     b = collate_sft(batch, tok.pad_token_id)
